@@ -1,0 +1,667 @@
+[1mdiff --git a/TradeChat.API/Controllers/AuthenticationController.cs b/TradeChat.API/Controllers/AuthenticationController.cs[m
+[1mindex d56aaf9..3489b70 100644[m
+[1m--- a/TradeChat.API/Controllers/AuthenticationController.cs[m
+[1m+++ b/TradeChat.API/Controllers/AuthenticationController.cs[m
+[36m@@ -1,50 +1,47 @@[m
+[31m-using System;[m
+[31m-using System.Collections.Generic;[m
+ using System.ComponentModel;[m
+[31m-using System.Globalization;[m
+[31m-using System.Linq;[m
+[31m-using System.Net.Http;[m
+[31m-using System.Security.Cryptography;[m
+[31m-using System.Text;[m
+ using System.Threading.Tasks;[m
+[31m-using System.Web;[m
+ using Microsoft.AspNetCore.Http;[m
+ using Microsoft.AspNetCore.Mvc;[m
+[31m-using Newtonsoft.Json;[m
+ using TradeChat.Data.ViewModels;[m
+[31m-using TradeChat.Services;[m
+[32m+[m[32musing TradeChat.Services.Binance;[m
+[32m+[m[32musing TradeChat.Services.Binance.Models;[m
+ using TradeChat.Services.Coinbase;[m
+[32m+[m[32musing TradeChat.Services.Kraken;[m
+[32m+[m[32musing TradeChat.Services.Luno;[m
+[32m+[m[32musing TradeChat.Services.Luno.Models;[m
+[32m+[m[32musing TradeChat.Services.UserServices;[m
+ [m
+ namespace AuthProject[m
+ {[m
+     [Controller, Route("/api/auth")][m
+     public class AuthenticationController : Controller[m
+     {[m
+[31m-        //private readonly BinanceAuthenticationService _binanceAuthService;[m
+[32m+[m[32m        private readonly IBinanceAuthenticationService binanceAuthService;[m
+         private readonly ICoinbaseAuthorizationService coinbaseService;[m
+[31m-        //private readonly LunoAuthenticationService _lunoAuthService;[m
+[31m-        //private readonly KrakenAuthenticationService _krakenAuthService;[m
+[32m+[m[32m        private readonly ILunoAuthenticationService lunoAuthService;[m
+[32m+[m[32m        private readonly IKrakenAuthenticationService krakenAuthService;[m
+         //private readonly LiquidAuthenticationService _liquidAuthService;[m
+ [m
+[31m-        private readonly IOAuthStateManager _oauthStateManager;[m
+[32m+[m[32m        private readonly IRetrieveUserService retrieveUserService;[m
+[32m+[m
+[32m+[m[32m        private readonly IOAuthStateManager oauthStateManager;[m
+ [m
+ [m
+         public AuthenticationController([m
+[31m-            ICoinbaseAuthorizationService coinbaseAuthService)[m
+[31m-            //IOAuthStateManager oauthStateManager, BinanceAuthenticationService binanceAuthenticationService,[m
+[31m-            //LunoAuthenticationService lunoAuthService, KrakenAuthenticationService krakenAuthService,[m
+[31m-            //LiquidAuthenticationService liquidAuthenticationService)[m
+[32m+[m[32m            ICoinbaseAuthorizationService coinbaseAuthService,[m
+[32m+[m[32m            IRetrieveUserService retrieveUserService,[m
+[32m+[m[32m            IOAuthStateManager oauthStateManager,[m
+[32m+[m[32m            IBinanceAuthenticationService binanceAuthService,[m
+[32m+[m[32m            ILunoAuthenticationService lunoAuthService,[m
+[32m+[m[32m            IKrakenAuthenticationService krakenAuthService)[m
+[32m+[m[32m        //LiquidAuthenticationService liquidAuthenticationService)[m
+         {[m
+[31m-            coinbaseService = coinbaseAuthService ??[m
+[31m-                throw new ArgumentNullException(nameof(coinbaseAuthService));[m
+[31m-            //_oauthStateManager = oauthStateManager ??[m
+[31m-            //    throw new ArgumentNullException(nameof(oauthStateManager));[m
+[31m-            //_binanceAuthService = binanceAuthenticationService ??[m
+[31m-            //    throw new ArgumentNullException(nameof(binanceAuthenticationService));[m
+[31m-            //_lunoAuthService = lunoAuthService ??[m
+[31m-            //    throw new ArgumentNullException(nameof(lunoAuthService));[m
+[31m-            //_krakenAuthService = krakenAuthService ??[m
+[31m-            //    throw new ArgumentNullException(nameof(krakenAuthService));[m
+[32m+[m[32m            coinbaseService = coinbaseAuthService;[m
+[32m+[m[32m            this.oauthStateManager = oauthStateManager;[m
+[32m+[m[32m            this.retrieveUserService = retrieveUserService;[m
+[32m+[m[32m            this.binanceAuthService = binanceAuthService;[m
+[32m+[m[32m            this.lunoAuthService = lunoAuthService;[m
+[32m+[m[32m            this.krakenAuthService = krakenAuthService;[m
+             //_liquidAuthService = liquidAuthenticationService ??[m
+             //    throw new ArgumentNullException(nameof(liquidAuthenticationService));[m
+         }[m
+[36m@@ -53,7 +50,7 @@[m [mnamespace AuthProject[m
+         /// Gets Coinbase OAuth Endpoint[m
+         /// </summary>[m
+         /// <returns></returns>[m
+[31m-        [HttpGet("coinbase")][m
+[32m+[m[32m        [HttpGet("coinbase/oauth")][m
+         [Description("Retuens Coinbase OAuth Endpoint.")][m
+         [ProducesResponseType(typeof(APIResponse<string>), StatusCodes.Status200OK)][m
+         public ActionResult CoinbaseAuthentication()[m
+[36m@@ -65,117 +62,109 @@[m [mnamespace AuthProject[m
+         /// <summary>[m
+         /// Coinbase OAuth callback endpoint[m
+         /// </summary>[m
+[31m-        /// <param name="code">Authorization Code initial request</param>[m
+[31m-        /// <param name="state">Random string sent with initial request</param>[m
+[32m+[m[32m        /// <param name = "code" > Authorization Code initial request</param>[m
+[32m+[m[32m        /// <param name = "state" > Random string sent with initial request</param>[m
+         /// <returns></returns>[m
+[31m-        //[HttpGet("coinbase/call-back")][m
+[31m-        //public async Task<ActionResult> CoinbaseAuthentication(string code, string state)[m
+[31m-        //{[m
+[31m-        //    // Validate state to prevent cross site request forgery[m
+[31m-        //    if (!_oauthStateManager.ValidateState(state).Result)[m
+[31m-        //    {[m
+[31m-        //        return Redirect(_coinbaseAuthService.AuthorizeFailUrl);[m
+[31m-        //    }[m
+[31m-        //    var authData = await _coinbaseAuthService.GetTokens(code);[m
+[31m-        //    if (authData == null)[m
+[31m-        //    {[m
+[31m-        //        return Redirect(_coinbaseAuthService.AuthorizeFailUrl);[m
+[31m-        //    }[m
+[31m-        //    return Redirect(_coinbaseAuthService.AuthorizeSuccessUrl);[m
+[31m-        //}[m
+[32m+[m[32m        [HttpGet("coinbase/call-back")][m
+[32m+[m[32m        public async Task<ActionResult> CoinbaseAuthentication(string code, string state)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            var user = await retrieveUserService.GetUserClaimsInfo(User);[m
+[32m+[m[32m            // Validate state to prevent cross site request forgery[m
+[32m+[m[32m            if (!oauthStateManager.ValidateState(state).Result)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                return BadRequest(new APIResponse<string>("Unable to validate State"));[m
+[32m+[m[32m            }[m
+[32m+[m[32m            var authData = await coinbaseService.GetTokens(code);[m
+[32m+[m[32m            if (authData == null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                return BadRequest(new APIResponse<string>("failed"));[m
+[32m+[m[32m            }[m
+[32m+[m[41m                [m
+[32m+[m[32m            await coinbaseService.SaveUserCoinBaseData(authData.access_token, user);[m
+[32m+[m[32m            return Ok(new APIResponse<string>("success"));[m
+[32m+[m[32m        }[m
+ [m
+[31m-        ///// <summary>[m
+[31m-        ///// Binance API Key authentication endpoint[m
+[31m-        ///// </summary>[m
+[31m-        ///// <param name="apiKey">API Key</param>[m
+[31m-        ///// <param name="apiSecret">Api Secret</param>[m
+[31m-        /////// <returns></returns>[m
+[31m-        ////[HttpGet("binance")][m
+[31m-        ////public async Task<IActionResult> BinanceAuthentication(string apiKey, string apiSecret)[m
+[31m-        ////{[m
+[31m-        ////    BinanceAuthorizationData authData = await _binanceAuthService.TestApiKey(apiKey, apiSecret);[m
+[31m-        ////    if (authData != null)[m
+[31m-        ////        return Json(new[m
+[31m-        ////        {[m
+[31m-        ////            status = true,[m
+[31m-        ////        });[m
+[31m-        ////    else return Json(new[m
+[31m-        ////    {[m
+[31m-        ////        status = false,[m
+[31m-        ////    });[m
+[31m-        ////}[m
+[32m+[m[32m        /// <summary>[m
+[32m+[m[32m        /// Binance API Key authentication endpoint[m
+[32m+[m[32m        /// </summary>[m
+[32m+[m[32m        /// <param name="apiKey">API Key</param>[m
+[32m+[m[32m        /// <param name="apiSecret">Api Secret</param>[m
+[32m+[m[32m        ///// <returns></returns>[m
+[32m+[m[32m        [HttpGet("binance/api-key")][m
+[32m+[m[32m        public async Task<IActionResult> BinanceAuthentication(string apiKey, string apiSecret)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            BinanceAuthorizationData authData = await binanceAuthService.TestApiKey(apiKey, apiSecret);[m
+[32m+[m[32m            if (authData != null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                BinanceOAuthAuthorizationData oAuthData = await binanceAuthService.GetTokens("00000");[m
+[32m+[m[32m                if (oAuthData != null)[m
+[32m+[m[32m                {[m[41m [m
+[32m+[m[32m                    return Ok(new APIResponse<bool>(true));[m
+[32m+[m[32m                }[m
+[32m+[m[32m                return Ok(new APIResponse<bool>(true));[m
+[32m+[m[32m            }[m
+[32m+[m[32m            else return Ok(new APIResponse<bool>(false));[m
+[32m+[m[32m        }[m
+ [m
+[31m-        //[HttpGet("binance/oauth")][m
+[31m-        //public async Task<IActionResult> BinanceOAuthAuthentication()[m
+[31m-        //{[m
+[31m-        //    string redirectUrl = await _binanceAuthService.GetAuthorizationUrl();[m
+[31m-        //    return Redirect(redirectUrl);[m
+[31m-        //}[m
+[32m+[m[32m        [HttpGet("binance/oauth")][m
+[32m+[m[32m        public async Task<IActionResult> BinanceOAuthAuthentication()[m
+[32m+[m[32m        {[m
+[32m+[m[32m            string redirectUrl = await binanceAuthService.GetAuthorizationUrl();[m
+[32m+[m[32m            return Ok(new APIResponse<string>(redirectUrl));[m
+[32m+[m[32m        }[m
+ [m
+[31m-        //[HttpGet("binance/oauth/call-back")][m
+[31m-        //public async Task<IActionResult> BinanceOAuthAuthentication(string code, string state)[m
+[31m-        //{[m
+[31m-        //    if(!await _oauthStateManager.ValidateState(state))[m
+[31m-        //    {[m
+[31m-        //        return RedirectToAction(_binanceAuthService.AuthorizeFailUrl);[m
+[31m-        //    }[m
+[31m-        //    else[m
+[31m-        //    {[m
+[31m-        //        BinanceOAuthAuthorizationData authData = await _binanceAuthService.GetTokens(code);[m
+[31m-        //        if(authData != null)[m
+[31m-        //        {[m
+[31m-        //            return Redirect(_binanceAuthService.AuthorizeSuccessUrl);[m
+[31m-        //        }[m
+[31m-        //    }[m
+[31m-        //    return Redirect(_binanceAuthService.AuthorizeFailUrl);[m
+[31m-        //}[m
+[32m+[m[32m        [HttpGet("binance/oauth/call-back")][m
+[32m+[m[32m        public async Task<IActionResult> BinanceOAuthAuthentication(string code, string state)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            if (!await oauthStateManager.ValidateState(state))[m
+[32m+[m[32m            {[m
+[32m+[m[32m                return RedirectToAction(binanceAuthService.AuthorizeFailUrl);[m
+[32m+[m[32m            }[m
+[32m+[m[32m            else[m
+[32m+[m[32m            {[m
+[32m+[m[32m                BinanceOAuthAuthorizationData authData = await binanceAuthService.GetTokens(code);[m
+[32m+[m[32m                if (authData != null)[m
+[32m+[m[32m                {[m
+[32m+[m[32m                    return Ok(binanceAuthService.AuthorizeSuccessUrl);[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[32m            return Ok(binanceAuthService.AuthorizeFailUrl);[m
+[32m+[m[32m        }[m
+ [m
+[31m-        ///// <summary>[m
+[31m-        ///// Luno API Key authentication endpoint[m
+[31m-        ///// </summary>[m
+[31m-        ///// <param name="apiKeyId">API Key ID</param>[m
+[31m-        ///// <param name="apiKeySecret">API Key Secret</param>[m
+[31m-        ///// <returns></returns>[m
+[31m-        //[HttpGet("luno")][m
+[31m-        //public async Task<IActionResult> LunoAuthentication(string apiKeyId, string apiKeySecret)[m
+[31m-        //{[m
+[31m-        //    LunoAuthorizationData authData = await _lunoAuthService.TestApiKey(apiKeyId, apiKeySecret);[m
+[31m-        //    if (authData != null)[m
+[31m-        //    {[m
+[31m-        //        return Json(new[m
+[31m-        //        {[m
+[31m-        //            status = true[m
+[31m-        //        });[m
+[31m-        //    }[m
+[31m-        //    return Json(new[m
+[31m-        //    {[m
+[31m-        //        status = false[m
+[31m-        //    });[m
+[31m-        //}[m
+[32m+[m[32m        /// <summary>[m
+[32m+[m[32m        /// Luno API Key authentication endpoint[m
+[32m+[m[32m        /// </summary>[m
+[32m+[m[32m        /// <param name="apiKeyId">API Key ID</param>[m
+[32m+[m[32m        /// <param name="apiKeySecret">API Key Secret</param>[m
+[32m+[m[32m        /// <returns></returns>[m
+[32m+[m[32m        [HttpGet("luno/api-key")][m
+[32m+[m[32m        public async Task<IActionResult> LunoAuthentication(string apiKeyId, string apiKeySecret)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            LunoAuthorizationData authData = await lunoAuthService.TestApiKey(apiKeyId, apiKeySecret);[m
+[32m+[m[32m            if (authData != null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                return  Ok(new APIResponse<bool>(true));[m
+[32m+[m[32m            }[m
+[32m+[m[32m            return  Ok(new APIResponse<bool>(false));[m
+[32m+[m[32m        }[m
+ [m
+[31m-        ///// <summary>[m
+[31m-        ///// Kraken API Key authentication endpoint[m
+[31m-        ///// </summary>[m
+[31m-        ///// <param name="apiKey">API Key</param>[m
+[31m-        ///// <param name="apiPrivateKey">API Private Key</param>[m
+[31m-        ///// <param name="otp">OTP for two factor authentication</param>[m
+[31m-        ///// <returns></returns>[m
+[31m-        //[HttpGet("kraken")][m
+[31m-        //public async Task<IActionResult> KrakenAuthentication(string apiKey, string apiPrivateKey, int otp)[m
+[31m-        //{[m
+[31m-        //    var authData = await _krakenAuthService.TestApiKey(apiKey, apiPrivateKey, otp > 0 ? otp.ToString() : string.Empty);[m
+[31m-        //    if (authData != null)[m
+[31m-        //    {[m
+[31m-        //        return Json(new[m
+[31m-        //        {[m
+[31m-        //            status = true,[m
+[31m-        //        });[m
+[31m-        //    }[m
+[31m-        //    return Json(new[m
+[31m-        //    {[m
+[31m-        //        status = false[m
+[31m-        //    });[m
+[31m-        //}[m
+[32m+[m[32m        /// <summary>[m
+[32m+[m[32m        /// Kraken API Key authentication endpoint[m
+[32m+[m[32m        /// </summary>[m
+[32m+[m[32m        /// <param name="apiKey">API Key</param>[m
+[32m+[m[32m        /// <param name="apiPrivateKey">API Private Key</param>[m
+[32m+[m[32m        /// <param name="otp">OTP for two factor authentication</param>[m
+[32m+[m[32m        /// <returns></returns>[m
+[32m+[m[32m        [HttpGet("kraken/api-key")][m
+[32m+[m[32m        public async Task<IActionResult> KrakenAuthentication(string apiKey, string apiPrivateKey, int otp)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            var authData = await krakenAuthService.TestApiKey(apiKey, apiPrivateKey, otp > 0 ? otp.ToString() : string.Empty);[m
+[32m+[m[32m            if (authData != null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                return Ok(new APIResponse<bool>(true));[m
+[32m+[m[32m            }[m
+[32m+[m[32m            return Ok(new APIResponse<bool>(false));[m
+[32m+[m[32m        }[m
+ [m
+         ///// <summary>[m
+         ///// Liquid API Key authentication endpoint[m
+[36m@@ -198,5 +187,7 @@[m [mnamespace AuthProject[m
+         //        status = false[m
+         //    });[m
+         //}[m
+[32m+[m
+[32m+[m
+     }[m
+ }[m
+\ No newline at end of file[m
+[1mdiff --git a/TradeChat.API/Startup.cs b/TradeChat.API/Startup.cs[m
+[1mindex aa9834b..0e0f39e 100644[m
+[1m--- a/TradeChat.API/Startup.cs[m
+[1m+++ b/TradeChat.API/Startup.cs[m
+[36m@@ -16,6 +16,8 @@[m [musing TradeChat.Services.ChatMessage;[m
+ using TradeChat.API.Extensions;[m
+ using TradeChat.Services.UserServices;[m
+ using TradeChat.Services.Coinbase;[m
+[32m+[m[32musing TradeChat.Services.Binance;[m
+[32m+[m[32musing TradeChat.Services.Luno;[m
+ [m
+ namespace TradeChat.API[m
+ {[m
+[36m@@ -61,8 +63,10 @@[m [mnamespace TradeChat.API[m
+             }));[m
+             services.AddApplicationInsightsTelemetry(Configuration["APPINSIGHTS_CONNECTIONSTRING"]);[m
+ [m
+[31m-            services.AddSingleton<ICoinbaseAuthorizationService, CoinbaseAuthenticationService>();[m
+[32m+[m[32m            services.AddScoped<ICoinbaseAuthorizationService, CoinbaseAuthenticationService>();[m
+[32m+[m[32m            services.AddScoped<IBinanceAuthenticationService, BinanceAuthenticationService>();[m
+             services.AddSingleton<IOAuthStateManager, OAuthStateManager>();[m
+[32m+[m[32m            services.AddScoped<ILunoAuthenticationService, LunoAuthenticationService>();[m
+             //services.AddScoped<CoinbaseAuthenticationService>();[m
+         }[m
+ [m
+[1mdiff --git a/TradeChat.API/appsettings.json b/TradeChat.API/appsettings.json[m
+[1mindex 8efff94..7790078 100644[m
+[1m--- a/TradeChat.API/appsettings.json[m
+[1m+++ b/TradeChat.API/appsettings.json[m
+[36m@@ -44,29 +44,33 @@[m
+   },[m
+   "Platforms": {[m
+     "Coinbase": {[m
+[31m-      "client_id": "0d521afc946cf15e4db19e280c728bc7e5b8dfbfc9ad4192032c68983a060030",[m
+[31m-      "client_secret": "b50a1d3dfb8262e8c77df56eb7a83c3d02f437208e263f8c3181f453d93f80b0",[m
+[32m+[m[32m      "client_id": "d0a6742dfb1a98e7169201873e0205a0952aef4d0820f265b649cbc11474470c",[m
+[32m+[m[32m      "client_secret": "acd7b69e19eaec90fa7c06900211672a85d4b194498f97a147a077e69c4bc94e",[m
+       "authorize_url": "https://www.coinbase.com/oauth/authorize",[m
+       "token_url": "https://api.coinbase.com/oauth/token",[m
+       "scopes": "wallet:accounts:read",[m
+[31m-      "callback_url": "https://localhost:5001/auth/coinbase/call-back",[m
+[31m-      "authorize_success": "https://localhost:5001/auth/success",[m
+[31m-      "authorize_fail": "https://localhost:5001/auth/fail"[m
+[32m+[m[32m      "callback_url": "http://localhost:4200/coinbase/call-back",[m
+[32m+[m[32m      "authorize_success": "http://localhost:4200/auth/success",[m
+[32m+[m[32m      "authorize_fail": "http://localhost:4200/auth/fail",[m
+[32m+[m[32m      "user_profile": "https://api.coinbase.com/v2/user"[m
+     },[m
+ [m
+     "Binance": {[m
+[31m-      "account_status_url": "https://api.binance.com/sapi/v1/account/status",[m
+[31m-      "client_id": "CLIENT_ID",[m
+[31m-      "client_secret": "CLIENT_SECRET",[m
+[32m+[m[32m      "account_status_url": "https://api.binance.com/sapi/v1/capital/config/getall",[m
+[32m+[m[32m      ///sapi/v1/account/status",[m
+[32m+[m[32m      "client_id": "0dsef2f9Rp3azYhR5DcO253VsJxnzWRXHpS7CakAnAMzOTtUYcVLVxtEfjQz5kAg",[m
+[32m+[m[32m      "client_secret": "IsYtShX1l9iNjhMcco91FFpHJXdyCjpxfMhCo1uRJMuKcGqwfMzj9ndotqY6zKao",[m
+       "authorize_url": "https://accounts.binance.com/en/oauth/authorize",[m
+       "token_url": "https://accounts.binance.com/oauth/token",[m
+       "scopes": "user:email,user:address",[m
+[31m-      "callback_url": "https://localhost:5001/auth/binance/oauth/call-back",[m
+[31m-      "authorize_success": "https://localhost:5001/auth/success",[m
+[31m-      "authorize_fail": "https://localhost:5001/auth/fail"[m
+[32m+[m[32m      "callback_url": "https://localhost:4200/auth/binance/call-back",[m
+[32m+[m[32m      "authorize_success": "http://localhost:4200/auth/success",[m
+[32m+[m[32m      "authorize_fail": "http://localhost:4200/auth/fail"[m
+     },[m
+ [m
+     "Luno": {[m
+[32m+[m[32m      "key": "fwv2tuyqssm8z",[m
+[32m+[m[32m      "secret": "Jb37LwtyztKPEi0t4zJoScIRwcODNzzWInte_A0BUXA",[m
+       "balance_url": "https://api.luno.com/api/1/balance"[m
+     },[m
+ [m
+[1mdiff --git a/TradeChat.Data/TradeChat.Data.csproj b/TradeChat.Data/TradeChat.Data.csproj[m
+[1mindex 0dbfbfd..2c081eb 100644[m
+[1m--- a/TradeChat.Data/TradeChat.Data.csproj[m
+[1m+++ b/TradeChat.Data/TradeChat.Data.csproj[m
+[36m@@ -6,6 +6,7 @@[m
+ [m
+   <ItemGroup>[m
+     <PackageReference Include="AspNetCore.Identity.Mongo" Version="8.1.0" />[m
+[32m+[m[32m    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />[m
+     <PackageReference Include="System.Text.Json" Version="5.0.2" />[m
+   </ItemGroup>[m
+ [m
+[1mdiff --git a/TradeChat.Data/ViewModels/APIResponse.cs b/TradeChat.Data/ViewModels/APIResponse.cs[m
+[1mindex 084a9db..18b1dc9 100644[m
+[1m--- a/TradeChat.Data/ViewModels/APIResponse.cs[m
+[1m+++ b/TradeChat.Data/ViewModels/APIResponse.cs[m
+[36m@@ -9,4 +9,5 @@[m [mnamespace TradeChat.Data.ViewModels[m
+        public  APIResponse(T s) => this.result = s; [m
+        public T result { get; set; }[m
+     }[m
+[32m+[m
+ }[m
+[1mdiff --git a/TradeChat.Data/ViewModels/Zabo/ZaboUserAccount.cs b/TradeChat.Data/ViewModels/Zabo/ZaboUserAccount.cs[m
+[1mindex 5cdf4ae..054062b 100644[m
+[1m--- a/TradeChat.Data/ViewModels/Zabo/ZaboUserAccount.cs[m
+[1m+++ b/TradeChat.Data/ViewModels/Zabo/ZaboUserAccount.cs[m
+[36m@@ -20,4 +20,5 @@[m [mnamespace TradeChat.Data.ViewModels.Zabo[m
+         [JsonPropertyName("updated_at")][m
+         public string UpdatedAt { get; set; }[m
+     }[m
+[32m+[m[41m     [m
+ }[m
+[1mdiff --git a/TradeChat.Services/BrokerServices/ILinkedBrokerService.cs b/TradeChat.Services/BrokerServices/ILinkedBrokerService.cs[m
+[1mindex 08f2238..3ce1a57 100644[m
+[1m--- a/TradeChat.Services/BrokerServices/ILinkedBrokerService.cs[m
+[1m+++ b/TradeChat.Services/BrokerServices/ILinkedBrokerService.cs[m
+[36m@@ -3,6 +3,8 @@[m [musing System.Collections.Generic;[m
+ using System.Text;[m
+ using System.Threading.Tasks;[m
+ using TradeChat.Data.ViewModels;[m
+[32m+[m[32musing TradeChat.Data.ViewModels.Coinbase;[m
+[32m+[m[32musing TradeChat.Data.ViewModels.Plaid;[m
+ using TradeChat.Data.ViewModels.Zabo;[m
+ using TradeChat.Services.Models;[m
+ [m
+[36m@@ -13,5 +15,8 @@[m [mnamespace TradeChat.Services.BrokerServices[m
+         Task<ICollection<BrokerDto>> GetAsync(SignedInUserInfo user);[m
+ [m
+         Task LinkAsync(ZaboUserAccount account, SignedInUserInfo user);[m
+[32m+[m
+[32m+[m[32m        Task LinkAsync(SavePlaidUserAccount account, SignedInUserInfo user);[m
+[32m+[m[32m        Task LinkAsync(CoinbaseAuthData account, SignedInUserInfo user);[m
+     }[m
+ }[m
+[1mdiff --git a/TradeChat.Services/BrokerServices/LinkedBrokerService.cs b/TradeChat.Services/BrokerServices/LinkedBrokerService.cs[m
+[1mindex a314cf6..1bab6f4 100644[m
+[1m--- a/TradeChat.Services/BrokerServices/LinkedBrokerService.cs[m
+[1m+++ b/TradeChat.Services/BrokerServices/LinkedBrokerService.cs[m
+[36m@@ -5,6 +5,8 @@[m [musing System.Text;[m
+ using System.Threading.Tasks;[m
+ using TradeChat.Data.Models;[m
+ using TradeChat.Data.ViewModels;[m
+[32m+[m[32musing TradeChat.Data.ViewModels.Coinbase;[m
+[32m+[m[32musing TradeChat.Data.ViewModels.Plaid;[m
+ using TradeChat.Data.ViewModels.Zabo;[m
+ using TradeChat.Services.Models;[m
+ using TradeChat.Services.Repository;[m
+[36m@@ -65,5 +67,55 @@[m [mnamespace TradeChat.Services.BrokerServices[m
+             await linkedBrokerRepo.InsertOneAsync(linkedBrokerDoc);[m
+             await userRepo.ReplaceOneAsync(userDoc);[m
+         }[m
+[32m+[m
+[32m+[m[32m        public async Task LinkAsync(CoinbaseAuthData account, SignedInUserInfo user)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            var linkedBrokerDoc = new LinkedBrokerDocument[m
+[32m+[m[32m            {[m
+[32m+[m[32m                UserId = user.Id,[m
+[32m+[m[32m                BrokerId = account.Provider,[m
+[32m+[m[32m                BrokerUserAccountId = account.Data.Id.ToString()[m
+[32m+[m[32m            };[m
+[32m+[m
+[32m+[m[32m            var userDoc = await userRepo.FindByIdAsync(user.Id);[m
+[32m+[m[32m            if (userDoc.Brokers == null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                userDoc.Brokers = new List<string>();[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            if (!userDoc.Brokers.Contains(account.Provider))[m
+[32m+[m[32m            {[m
+[32m+[m[32m                userDoc.Brokers.Add(account.Provider);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            await linkedBrokerRepo.InsertOneAsync(linkedBrokerDoc);[m
+[32m+[m[32m            await userRepo.ReplaceOneAsync(userDoc);[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        public async Task LinkAsync(SavePlaidUserAccount account, SignedInUserInfo user)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            var itemId = await plaidLinkService.SaveItemAsync(account.PublicToken, user);[m
+[32m+[m[32m            var brokerId = account.MetaData.Institution.InstitutionId;[m
+[32m+[m[32m            var linkedBrokerDoc = new LinkedBrokerDocument[m
+[32m+[m[32m            {[m
+[32m+[m[32m                UserId = user.Id,[m
+[32m+[m[32m                BrokerId = brokerId,[m
+[32m+[m[32m                BrokerUserAccountId = itemId[m
+[32m+[m[32m            };[m
+[32m+[m
+[32m+[m[32m            var userDoc = await userRepo.FindByIdAsync(user.Id);[m
+[32m+[m[32m            if (userDoc.Brokers == null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                userDoc.Brokers = new List<string>();[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            if (!userDoc.Brokers.Contains(brokerId))[m
+[32m+[m[32m            {[m
+[32m+[m[32m                userDoc.Brokers.Add(brokerId);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            await linkedBrokerRepo.InsertOneAsync(linkedBrokerDoc);[m
+[32m+[m[32m            await userRepo.ReplaceOneAsync(userDoc);[m
+[32m+[m[32m        }[m
+     }[m
+ }[m
+[1mdiff --git a/TradeChat.Services/Coinbase/CoinbaseAuthorization.cs b/TradeChat.Services/Coinbase/CoinbaseAuthorization.cs[m
+[1mindex e059e0e..06da311 100644[m
+[1m--- a/TradeChat.Services/Coinbase/CoinbaseAuthorization.cs[m
+[1m+++ b/TradeChat.Services/Coinbase/CoinbaseAuthorization.cs[m
+[36m@@ -3,11 +3,15 @@[m [musing Newtonsoft.Json;[m
+ using System;[m
+ using System.Collections.Generic;[m
+ using System.Net.Http;[m
+[32m+[m[32musing System.Net.Http.Headers;[m
+ using System.Text;[m
+ using System.Threading.Tasks;[m
+ using TradeChat.Data.ViewModels;[m
+[32m+[m[32musing TradeChat.Data.ViewModels.Coinbase;[m
+[32m+[m[32musing TradeChat.Services.BrokerServices;[m
+ using TradeChat.Services.Coinbase;[m
+ using TradeChat.Services.Coinbase.Model;[m
+[32m+[m[32musing TradeChat.Services.Models;[m
+ [m
+ namespace TradeChat.Services[m
+ {[m
+[36m@@ -17,7 +21,8 @@[m [mnamespace TradeChat.Services[m
+         public string AuthorizeFailUrl => authorizeFailUrl;[m
+ [m
+         private readonly IConfiguration Configuration;[m
+[31m-        private readonly IOAuthStateManager AuthStateManager; [m
+[32m+[m[32m        private readonly IOAuthStateManager AuthStateManager;[m
+[32m+[m[32m        private readonly ILinkedBrokerService linkedBrokerService;[m
+ [m
+         private readonly string clientId;[m
+         private readonly string clientSecret;[m
+[36m@@ -27,14 +32,15 @@[m [mnamespace TradeChat.Services[m
+         private readonly string redirectUrl;[m
+         private readonly string authorizeSuccessUrl;[m
+         private readonly string authorizeFailUrl;[m
+[32m+[m[32m        private readonly string user_profile;[m
+ [m
+         public CoinbaseAuthenticationService(IConfiguration configuration,[m
+[31m-            IOAuthStateManager authStateManager)[m
+[31m-        { [m
+[31m-            Configuration = configuration ??[m
+[31m-                throw new ArgumentNullException(nameof(configuration));[m
+[31m-            AuthStateManager = authStateManager ??[m
+[31m-                throw new ArgumentException(nameof(authStateManager));[m
+[32m+[m[32m            IOAuthStateManager authStateManager, ILinkedBrokerService linkedBrokerService)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            this.Configuration = configuration;[m
+[32m+[m[32m            this.AuthStateManager = authStateManager;[m
+[32m+[m[32m            this.linkedBrokerService = linkedBrokerService;[m
+[32m+[m
+             var coinbaseConfig = Configuration.GetSection("Platforms:Coinbase");[m
+             clientId = coinbaseConfig["client_id"];[m
+             clientSecret = coinbaseConfig["client_secret"];[m
+[36m@@ -44,6 +50,7 @@[m [mnamespace TradeChat.Services[m
+             redirectUrl = coinbaseConfig["callback_url"];[m
+             authorizeSuccessUrl = coinbaseConfig["authorize_success"];[m
+             authorizeFailUrl = coinbaseConfig["authorize_fail"];[m
+[32m+[m[32m            user_profile = configuration["user_profile"];[m
+         }[m
+ [m
+         /// <summary>[m
+[36m@@ -64,6 +71,7 @@[m [mnamespace TradeChat.Services[m
+         /// <returns></returns>[m
+         public async Task<CoinbaseAuthorizationData> GetTokens(string code)[m
+         {[m
+[32m+[m
+             string content = JsonConvert.SerializeObject(new[m
+             {[m
+                 grant_type = "authorization_code",[m
+[36m@@ -86,5 +94,22 @@[m [mnamespace TradeChat.Services[m
+                 return null;[m
+             }[m
+         }[m
+[32m+[m
+[32m+[m[32m        public async Task SaveUserCoinBaseData(string access_token, SignedInUserInfo user)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            HttpClient client = new HttpClient();[m
+[32m+[m[32m            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", access_token);[m
+[32m+[m[32m            HttpResponseMessage res = await client.GetAsync("https://api.coinbase.com/v2/user");[m
+[32m+[m[32m            if (res.IsSuccessStatusCode)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                var result = await res.Content.ReadAsStringAsync();[m
+[32m+[m[32m                var userData = JsonConvert.DeserializeObject<CoinbaseAuthData>(result);[m
+[32m+[m[32m                if (userData != null)[m
+[32m+[m[32m                {[m
+[32m+[m[32m                    userData.Provider = "Coinbase";[m
+[32m+[m[32m                    await linkedBrokerService.LinkAsync(userData, user);[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+     }[m
+ }[m
+[1mdiff --git a/TradeChat.Services/Coinbase/ICoinbaseAuthorizationService.cs b/TradeChat.Services/Coinbase/ICoinbaseAuthorizationService.cs[m
+[1mindex f14db1d..24ad3e7 100644[m
+[1m--- a/TradeChat.Services/Coinbase/ICoinbaseAuthorizationService.cs[m
+[1m+++ b/TradeChat.Services/Coinbase/ICoinbaseAuthorizationService.cs[m
+[36m@@ -2,12 +2,18 @@[m
+ using System.Threading.Tasks;[m
+ using TradeChat.Data.ViewModels;[m
+ using TradeChat.Services.Coinbase.Model;[m
+[32m+[m[32musing TradeChat.Services.Models;[m
+ [m
+ namespace TradeChat.Services.Coinbase[m
+ {[m
+     public interface ICoinbaseAuthorizationService[m
+     {[m
+[32m+[m[32m        string AuthorizeSuccessUrl { get; }[m
+[32m+[m[32m        string AuthorizeFailUrl { get; }[m
+[32m+[m
+         public APIResponse<string> GetAuthorizationUrl();[m
+         public Task<CoinbaseAuthorizationData> GetTokens(string code);[m
+[32m+[m[32m        Task SaveUserCoinBaseData(string code, SignedInUserInfo user);[m
+     }[m
+[32m+[m
+ }[m
+[1mdiff --git a/TradeChat.Services/Coinbase/Model/Coinbasem.cs b/TradeChat.Services/Coinbase/Model/Coinbasem.cs[m
+[1mdeleted file mode 100644[m
+[1mindex 8e3df5d..0000000[m
+[1m--- a/TradeChat.Services/Coinbase/Model/Coinbasem.cs[m
+[1m+++ /dev/null[m
+[36m@@ -1,11 +0,0 @@[m
+[31m-﻿using System;[m
+[31m-using System.Collections.Generic;[m
+[31m-using System.Text;[m
+[31m-[m
+[31m-namespace TradeChat.Services.Coinbase.Model[m
+[31m-{[m
+[31m-    public class StateModel[m
+[31m-    {[m
+[31m-        public string State { get; set; }[m
+[31m-    }[m
+[31m-}[m
+[1mdiff --git a/TradeChat.Services/Coinbase/OAuthStateManager.cs b/TradeChat.Services/Coinbase/OAuthStateManager.cs[m
+[1mindex a6ebfc6..f47cdf6 100644[m
+[1m--- a/TradeChat.Services/Coinbase/OAuthStateManager.cs[m
+[1m+++ b/TradeChat.Services/Coinbase/OAuthStateManager.cs[m
+[36m@@ -32,6 +32,7 @@[m [mnamespace TradeChat.Services.Coinbase[m
+ [m
+         public Task<bool> ValidateState(string state)[m
+         {[m
+[32m+[m[32m            var states = States.ToList();[m
+             return Task.FromResult(States.Any(s => s.State == state));[m
+         }[m
+     }[m
+[1mdiff --git a/TradeChat.Services/TradeChat.Services.csproj b/TradeChat.Services/TradeChat.Services.csproj[m
+[1mindex 0d2b21b..49a91d9 100644[m
+[1m--- a/TradeChat.Services/TradeChat.Services.csproj[m
+[1m+++ b/TradeChat.Services/TradeChat.Services.csproj[m
+[36m@@ -10,7 +10,8 @@[m
+     <PackageReference Include="Microsoft.Extensions.Http" Version="5.0.0" />[m
+     <PackageReference Include="SendGrid" Version="9.24.1" />[m
+     <PackageReference Include="System.Net.Http" Version="4.3.4" />[m
+[31m-    <PackageReference Include="System.Net.Http.Json" Version="5.0.0" />[m
+[32m+[m[32m    <PackageReference Include="System.Net.Http.Json" Version="5.0.0" />[m[41m [m
+[32m+[m	[32m<PackageReference Include="Microsoft.CSharp" Version="4.7.0" />[m
+   </ItemGroup>[m
+ [m
+   <ItemGroup>[m

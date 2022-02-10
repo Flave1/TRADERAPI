@@ -1,0 +1,123 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- develop
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+steps:
+- task: NuGetToolInstaller@1
+
+- task: NuGetCommand@2
+  inputs:
+    restoreSolution: '$(solution)'
+
+- task: VSBuild@1
+  displayName: 'Build solution'
+  inputs:
+    solution: '$(solution)'
+    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:DesktopBuildPackageLocation="$(build.artifactStagingDirectory)\WebApp.zip" /p:DeployIisAppPath="Default Web Site"'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+- task: VSTest@2
+  displayName: 'Run Unit Tests'
+  inputs:
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish projects to Zip Archive'
+  inputs:
+    command: publish
+    projects: $(solution)
+    publishWebProjects: true
+    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: True
+
+- task: CmdLine@2
+  inputs:
+    script: |
+      echo "Structure of work folder of this pipeline:"
+      tree $(Agent.WorkFolder)\1 /f
+      echo "Build.ArtifactStagingDirectory:" 
+      echo "$(Build.ArtifactStagingDirectory)"
+      echo "Build.BinariesDirectory:" 
+      echo "$(Build.BinariesDirectory)"
+      echo "Build.SourcesDirectory:"
+      echo "$(Build.SourcesDirectory)"
+
+- task: AzureRmWebAppDeployment@4
+  displayName: 'Deploy TradeChat.API'
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: 'Swiftcore-Subscription(1a4f6490-329d-4630-99df-03963903aa6c)'
+    appType: 'webApp'
+    WebAppName: 'api-tradechat'
+    packageForLinux: '$(Build.ArtifactStagingDirectory)/TradeChat.API.zip'
+
+- task: AzureRmWebAppDeployment@4
+  displayName: 'Deploy TradeChat.API.Worker'
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: 'Swiftcore-Subscription(1a4f6490-329d-4630-99df-03963903aa6c)'
+    appType: 'webApp'
+    WebAppName: 'worker-tradechat'
+    packageForLinux: '$(Build.ArtifactStagingDirectory)/TradeChat.API.Worker.zip'
+
+
+#Azure Function Deployment
+
+- task: DotNetCoreCLI@2
+  displayName: 'Restore project dependencies'
+  inputs:
+    command: 'restore'
+    projects: '$(Agent.WorkFolder)/1/s/TradeChat.Triggers/*.csproj'
+    feedsToUse: 'select'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build the project - $(buildConfiguration)'
+  inputs:
+    command: 'build'
+    projects: '$(Agent.WorkFolder)/1/s/TradeChat.Triggers/*.csproj'
+    arguments: '--no-restore --configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish the project - $(buildConfiguration)'
+  inputs:
+    command: 'publish'
+    projects: '$(Agent.WorkFolder)/1/s/TradeChat.Triggers/*.csproj'
+    publishWebProjects: false
+    arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
+    zipAfterPublish: true
+
+- task: CmdLine@2
+  inputs:
+    script: |
+      echo "Structure of work folder of this pipeline:"
+      tree $(Agent.WorkFolder)\1 /f
+      echo "Build.ArtifactStagingDirectory:" 
+      echo "$(Build.ArtifactStagingDirectory)"
+      echo "Build.BinariesDirectory:" 
+      echo "$(Build.BinariesDirectory)"
+      echo "Build.SourcesDirectory:"
+      echo "$(Build.SourcesDirectory)"
+
+
+- task: AzureFunctionApp@1
+  displayName: 'Deploy TradeChat.Triggers'
+  inputs:
+    azureSubscription: 'Swiftcore-Subscription(1a4f6490-329d-4630-99df-03963903aa6c)'
+    appType: 'functionApp'
+    appName: 'trigger-tradechat'
+    package: '$(Build.ArtifactStagingDirectory)/$(buildConfiguration)/TradeChat.Triggers.zip'
+    deploymentMethod: 'auto'
